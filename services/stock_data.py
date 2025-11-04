@@ -550,44 +550,49 @@ class StockDataService:
             if hk_us_stock_codes:
                 await self._initialize_apis()
                 if self.longport_api and self.longport_api._initialized:
-                    # 标准化股票代码
-                    normalized_codes = [self._normalize_stock_code(code)[1] for code in hk_us_stock_codes]
+                    # 标准化股票代码，过滤掉无效代码
+                    normalized_list = [self._normalize_stock_code(code) for code in hk_us_stock_codes]
+                    normalized_codes = [normalized_code for _, normalized_code in normalized_list if normalized_code is not None]
 
-                    raw_data_dict = await self.longport_api.get_multiple_quotes(normalized_codes)
+                    if normalized_codes:
+                        raw_data_dict = await self.longport_api.get_multiple_quotes(normalized_codes)
 
-                    for original_code, raw_data in zip(hk_us_stock_codes, raw_data_dict.values()):
-                        try:
-                            if raw_data:
-                                stock_info = StockInfo(
-                                    code=raw_data.get('code', ''),
-                                    name=raw_data.get('name', ''),
-                                    current_price=raw_data.get('current_price', 0),
-                                    open_price=raw_data.get('open_price', 0),
-                                    close_price=raw_data.get('close_price', 0),
-                                    high_price=raw_data.get('high_price', 0),
-                                    low_price=raw_data.get('low_price', 0),
-                                    volume=raw_data.get('volume', 0),
-                                    turnover=raw_data.get('turnover', 0),
-                                    bid1_price=raw_data.get('bid1_price', 0),
-                                    ask1_price=raw_data.get('ask1_price', 0),
-                                    change_percent=raw_data.get('change_percent', 0),
-                                    change_amount=raw_data.get('change_amount', 0),
-                                    limit_up=raw_data.get('limit_up', 0),
-                                    limit_down=raw_data.get('limit_down', 0),
-                                    is_suspended=raw_data.get('is_suspended', False),
-                                    update_time=int(time.time())
-                                )
-                                results[original_code] = stock_info
+                        # 创建映射表，从标准化代码映射回原始代码
+                        code_mapping = {normalized: original for original, normalized in normalized_list if normalized is not None}
 
-                                # 保存到缓存
-                                normalized_code = self._normalize_stock_code(original_code)[1]
-                                self.storage.save_market_cache(normalized_code, stock_info.to_dict())
-                            else:
+                        for normalized_code, raw_data in raw_data_dict.items():
+                            original_code = code_mapping.get(normalized_code, normalized_code)
+                            try:
+                                if raw_data:
+                                    stock_info = StockInfo(
+                                        code=raw_data.get('code', ''),
+                                        name=raw_data.get('name', ''),
+                                        current_price=raw_data.get('current_price', 0),
+                                        open_price=raw_data.get('open_price', 0),
+                                        close_price=raw_data.get('close_price', 0),
+                                        high_price=raw_data.get('high_price', 0),
+                                        low_price=raw_data.get('low_price', 0),
+                                        volume=raw_data.get('volume', 0),
+                                        turnover=raw_data.get('turnover', 0),
+                                        bid1_price=raw_data.get('bid1_price', 0),
+                                        ask1_price=raw_data.get('ask1_price', 0),
+                                        change_percent=raw_data.get('change_percent', 0),
+                                        change_amount=raw_data.get('change_amount', 0),
+                                        limit_up=raw_data.get('limit_up', 0),
+                                        limit_down=raw_data.get('limit_down', 0),
+                                        is_suspended=raw_data.get('is_suspended', False),
+                                        update_time=int(time.time())
+                                    )
+                                    results[original_code] = stock_info
+
+                                    # 保存到缓存
+                                    self.storage.save_market_cache(normalized_code, stock_info.to_dict())
+                                else:
+                                    results[original_code] = None
+
+                            except Exception as e:
+                                logger.error(f"构建港股美股信息失败 {original_code}: {e}")
                                 results[original_code] = None
-
-                        except Exception as e:
-                            logger.error(f"构建港股美股信息失败 {original_code}: {e}")
-                            results[original_code] = None
 
         except Exception as e:
             logger.error(f"批量获取股票数据失败: {e}")

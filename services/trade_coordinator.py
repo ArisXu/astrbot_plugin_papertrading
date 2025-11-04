@@ -49,15 +49,38 @@ class TradeCoordinator:
         user = User.from_dict(user_data)
         return True, None, user
     
-    async def search_and_validate_stock(self, keyword: str) -> Tuple[bool, Optional[str], Optional[Dict[str, str]]]:
+    async def search_and_validate_stock(self, keyword: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
         """
-        搜索并验证股票
-        
+        搜索并验证股票（支持多市场）
+
+        Args:
+            keyword: 搜索关键词
+
         Returns:
             (是否找到, 错误信息, 股票信息字典)
         """
-        # 先尝试精确匹配（如果是6位数字代码）
-        if keyword.isdigit() and len(keyword) == 6:
+        keyword_upper = keyword.upper().strip()
+
+        # 检查是否包含市场后缀，进行精确搜索
+        if '.HK' in keyword_upper or '.US' in keyword_upper:
+            # 港股或美股精确搜索
+            try:
+                stock_info = await self.stock_service.get_stock_info(keyword)
+                if stock_info:
+                    market_name = '港股' if '.HK' in keyword_upper else '美股'
+                    return True, None, {
+                        'code': keyword,
+                        'name': stock_info.name,
+                        'market': market_name
+                    }
+                else:
+                    return False, f"❌ 找不到股票: {keyword}\n请检查股票代码是否正确", None
+            except Exception as e:
+                logger.error(f"精确搜索股票失败 {keyword}: {e}")
+                return False, f"❌ 获取股票信息失败: {keyword}", None
+
+        # 6位数字A股代码精确匹配
+        elif keyword.isdigit() and len(keyword) == 6:
             stock_code = Validators.normalize_stock_code(keyword)
             if stock_code:
                 try:
@@ -66,24 +89,28 @@ class TradeCoordinator:
                         return True, None, {
                             'code': stock_code,
                             'name': stock_info.name,
-                            'market': '未知'
+                            'market': 'A股'
                         }
                 except Exception:
                     pass
-        
-        # 模糊搜索
+
+        # 模糊搜索（包括中文名称、拼音、简码等）
         try:
             candidates = await self.stock_service.search_stocks_fuzzy(keyword)
-            
+
             if not candidates:
                 return False, f"❌ 未找到相关股票: {keyword}\n请尝试使用股票代码或准确的股票名称", None
-            
+
             if len(candidates) == 1:
                 return True, None, candidates[0]
             else:
                 # 多个候选，需要用户选择
-                return True, None, {"multiple": True, "candidates": candidates}
-                
+                return True, None, {
+                    "multiple": True,
+                    "candidates": candidates,
+                    "keyword": keyword
+                }
+
         except Exception as e:
             logger.error(f"搜索股票失败: {e}")
             return False, "❌ 搜索股票时出现错误，请稍后重试", None
