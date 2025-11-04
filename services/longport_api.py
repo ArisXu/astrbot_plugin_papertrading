@@ -99,9 +99,9 @@ class LongPortAPIService:
         """关闭连接"""
         try:
             if self.quote_ctx:
-                await self.quote_ctx.close()
+                self.quote_ctx.close()
             if self.trade_ctx:
-                await self.trade_ctx.close()
+                self.trade_ctx.close()
             self._initialized = False
         except Exception as e:
             logger.error(f"关闭长桥API连接失败: {e}")
@@ -165,7 +165,7 @@ class LongPortAPIService:
 
             # 获取实时报价
             logger.info("[长桥API] 正在调用quote API...")
-            quotes = await self.quote_ctx.quote([normalized_symbol])
+            quotes = self.quote_ctx.quote([normalized_symbol])
             logger.info("[长桥API] quote API返回: %s", type(quotes))
 
             if not quotes:
@@ -196,7 +196,7 @@ class LongPortAPIService:
 
             try:
                 logger.info("[长桥API] 正在获取股票基本信息...")
-                static_infos = await self.quote_ctx.static_info([normalized_symbol])
+                static_infos = self.quote_ctx.static_info([normalized_symbol])
                 logger.info("[长桥API] static_info API返回: %d 条记录", len(static_infos) if static_infos else 0)
 
                 if static_infos and len(static_infos) > 0:
@@ -394,7 +394,7 @@ class LongPortAPIService:
 
             # 批量获取报价
             logger.info("[长桥API] 正在调用quote API批量获取报价...")
-            quotes = await self.quote_ctx.quote(normalized_symbols)
+            quotes = self.quote_ctx.quote(normalized_symbols)
             logger.info("[长桥API] quote API返回 %d 条数据", len(quotes) if quotes else 0)
 
             # 构建结果字典
