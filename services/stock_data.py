@@ -359,6 +359,98 @@ class StockDataService:
             股票列表
         """
         try:
+            keyword_upper = keyword.upper().strip()
+
+            # 如果 keyword 包含市场后缀，进行精确搜索
+            if '.HK' in keyword_upper or '.US' in keyword_upper:
+                return await self._search_exact_market_stock(keyword)
+            elif '.' in keyword_upper and '.A' in keyword_upper:
+                # A股的完整格式（如000001.A）
+                base_code = keyword_upper.replace('.A', '')
+                return await self._search_exact_market_stock(base_code)
+            else:
+                # 没有后缀，进行模糊搜索
+                return await self._search_fuzzy_stock(keyword)
+
+        except Exception as e:
+            logger.error(f"搜索股票失败: {e}")
+            return []
+
+    async def _search_exact_market_stock(self, keyword: str) -> list:
+        """
+        精确搜索股票（带市场后缀的情况）
+
+        Args:
+            keyword: 搜索关键词（可能包含市场后缀）
+
+        Returns:
+            股票列表
+        """
+        keyword_upper = keyword.upper().strip()
+
+        try:
+            # 港股精确搜索
+            if '.HK' in keyword_upper:
+                stock_code = keyword_upper.replace('.HK', '')
+                await self._initialize_apis()
+                if self.longport_api and self.longport_api._initialized:
+                    # 标准化为长桥格式
+                    normalized_code = f"{stock_code}.HK"
+                    stock_data = await self.longport_api.get_stock_quote(normalized_code)
+                    if stock_data:
+                        return [{
+                            'code': stock_data['code'],
+                            'name': stock_data['name'],
+                            'price': stock_data['current_price'],
+                            'market': '港股'
+                        }]
+                return []
+
+            # 美股精确搜索
+            elif '.US' in keyword_upper:
+                stock_code = keyword_upper.replace('.US', '')
+                await self._initialize_apis()
+                if self.longport_api and self.longport_api._initialized:
+                    # 标准化为长桥格式
+                    normalized_code = f"{stock_code}.US"
+                    stock_data = await self.longport_api.get_stock_quote(normalized_code)
+                    if stock_data:
+                        return [{
+                            'code': stock_data['code'],
+                            'name': stock_data['name'],
+                            'price': stock_data['current_price'],
+                            'market': '美股'
+                        }]
+                return []
+
+            # A股精确搜索（不带后缀或带.A后缀）
+            else:
+                async with EastMoneyAPIService(self.storage) as api:
+                    stock_info = await api.get_stock_realtime_data(keyword)
+                    if stock_info:
+                        return [{
+                            'code': stock_info['code'],
+                            'name': stock_info['name'],
+                            'price': stock_info['current_price'],
+                            'market': 'A股'
+                        }]
+                return []
+
+        except Exception as e:
+            logger.error(f"精确搜索股票失败 {keyword}: {e}")
+            return []
+
+    async def _search_fuzzy_stock(self, keyword: str) -> list:
+        """
+        模糊搜索股票（不带市场后缀的情况）
+
+        Args:
+            keyword: 搜索关键词
+
+        Returns:
+            股票列表
+        """
+        try:
             # 首先尝试A股搜索
             async with EastMoneyAPIService(self.storage) as api:
                 stock_info = await api.get_stock_realtime_data(keyword)
@@ -366,10 +458,11 @@ class StockDataService:
                     return [{
                         'code': stock_info['code'],
                         'name': stock_info['name'],
-                        'price': stock_info['current_price']
+                        'price': stock_info['current_price'],
+                        'market': 'A股'
                     }]
 
-            # 如果A股搜索失败，尝试港股美股
+            # 如果A股搜索失败，尝试港股美股模糊搜索
             await self._initialize_apis()
             if self.longport_api and self.longport_api._initialized:
                 hk_us_results = await self.longport_api.search_stocks_fuzzy(keyword, limit=5)
@@ -379,7 +472,7 @@ class StockDataService:
             return []
 
         except Exception as e:
-            logger.error(f"搜索股票失败: {e}")
+            logger.error(f"模糊搜索股票失败: {e}")
             return []
 
     async def search_stocks_fuzzy(self, keyword: str) -> list:
