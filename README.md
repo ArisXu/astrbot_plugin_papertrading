@@ -57,7 +57,13 @@ pip install -r requirements.txt
      - `longport_app_secret`: 长桥API App Secret
      - `longport_access_token`: 长桥API Access Token
 
-4. **重启AstrBot或热重载插件**
+4. **配置汇率（港股美股交易需要）**
+   - 在AstrBot插件配置中设置汇率：
+     - `hkd_to_cny_rate`: 港币兑人民币汇率（例如：0.92表示1港币=0.92人民币）
+     - `usd_to_cny_rate`: 美元兑人民币汇率（例如：7.2表示1美元=7.2人民币）
+   - **注意**：所有港股美股交易均以人民币结算，系统会自动使用配置的汇率进行转换
+
+5. **重启AstrBot或热重载插件**
 
 
 ## 🎮 使用指南

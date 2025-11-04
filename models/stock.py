@@ -10,7 +10,7 @@ class StockInfo:
     """股票信息模型"""
     code: str                       # 股票代码
     name: str                       # 股票名称
-    current_price: float            # 当前价格
+    current_price: float            # 当前价格（原始货币）
     open_price: float               # 开盘价
     close_price: float              # 收盘价
     high_price: float               # 最高价
@@ -25,6 +25,7 @@ class StockInfo:
     limit_down: float               # 跌停价
     is_suspended: bool              # 是否停牌
     update_time: int                # 更新时间戳
+    market: str = "A"               # 市场类型：'A' (A股), 'HK' (港股), 'US' (美股)
     
     def __post_init__(self):
         """初始化后处理"""

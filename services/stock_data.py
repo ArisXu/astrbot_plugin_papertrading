@@ -123,7 +123,7 @@ class StockDataService:
         try:
             if market == 'A':
                 # A股使用东方财富API
-                stock_data = await self._fetch_stock_data_from_eastmoney(normalized_code, skip_limit_calculation)
+                stock_data = await self._fetch_stock_data_from_eastmoney(normalized_code, skip_limit_calculation, market)
             elif market in ['HK', 'US']:
                 # 港股美股使用长桥API
                 stock_data = await self._fetch_stock_data_from_longport(normalized_code, market)
@@ -183,7 +183,8 @@ class StockDataService:
                 limit_up=raw_data.get('limit_up', 0),
                 limit_down=raw_data.get('limit_down', 0),
                 is_suspended=raw_data.get('is_suspended', False),
-                update_time=int(time.time())
+                update_time=int(time.time()),
+                market=market  # 添加市场类型
             )
 
             return stock_info
@@ -192,38 +193,42 @@ class StockDataService:
             logger.error(f"从长桥API获取数据失败 {stock_code}: {e}")
             return None
     
-    async def _fetch_stock_data_from_eastmoney(self, stock_code: str, skip_limit_calculation: bool = False) -> Optional[StockInfo]:
+    async def _fetch_stock_data_from_eastmoney(self, stock_code: str, skip_limit_calculation: bool = False, market: str = 'A') -> Optional[StockInfo]:
         """
         从东方财富API获取股票数据
-        
+
         Args:
             stock_code: 股票代码
-            
+            skip_limit_calculation: 是否跳过涨跌停计算
+            market: 市场类型
+
         Returns:
             股票信息对象或None
         """
         try:
             async with EastMoneyAPIService(self.storage) as api:
                 raw_data = await api.get_stock_realtime_data(stock_code)
-                
+
                 if not raw_data:
                     logger.warning(f"未获取到股票数据: {stock_code}")
                     return None
-                
+
                 # 构造StockInfo对象
-                return await self._build_stock_info(raw_data, skip_limit_calculation)
+                return await self._build_stock_info(raw_data, skip_limit_calculation, market)
                 
         except Exception as e:
             logger.error(f"从东方财富API获取数据失败 {stock_code}: {e}")
             return None
     
-    async def _build_stock_info(self, raw_data: Dict[str, Any], skip_limit_calculation: bool = False) -> StockInfo:
+    async def _build_stock_info(self, raw_data: Dict[str, Any], skip_limit_calculation: bool = False, market: str = 'A') -> StockInfo:
         """
         从原始数据构建StockInfo对象
-        
+
         Args:
-            raw_data: 东方财富API返回的原始数据
-            
+            raw_data: API返回的原始数据
+            skip_limit_calculation: 是否跳过涨跌停计算
+            market: 市场类型 ('A', 'HK', 'US')
+
         Returns:
             StockInfo对象
         """
@@ -231,15 +236,15 @@ class StockDataService:
         close_price = raw_data.get('close_price', current_price)
         stock_code = raw_data.get('code', '')
         stock_name = raw_data.get('name', '')
-        
+
         # 设置买卖价格 - 统一使用当前价格，不再使用买1卖1
         # 模拟交易简化处理，所有交易都按当前价格进行
         trade_price = current_price if current_price > 0 else close_price
-        
+
         # 检查股票是否停牌
         is_suspended = self._check_if_suspended(raw_data)
-        
-        # 获取涨跌停价格 - 使用统一的价格服务
+
+        # 获取涨跌停价格
         if skip_limit_calculation:
             # 跳过涨跌停计算，直接使用API数据（防止递归调用）
             limit_up = raw_data.get('limit_up', 0)
@@ -248,7 +253,7 @@ class StockDataService:
             from .price_service import get_price_limit_service
             price_service = get_price_limit_service(self.storage)
             limit_up, limit_down = await price_service.get_limit_prices(raw_data, stock_code, stock_name)
-        
+
         # 构建StockInfo对象
         stock_info = StockInfo(
             code=stock_code,
@@ -267,9 +272,10 @@ class StockDataService:
             limit_up=limit_up,
             limit_down=limit_down,
             is_suspended=is_suspended,
-            update_time=int(time.time())
+            update_time=int(time.time()),
+            market=market  # 添加市场类型
         )
-        
+
         return stock_info
     
     def _check_if_suspended(self, raw_data: Dict[str, Any]) -> bool:

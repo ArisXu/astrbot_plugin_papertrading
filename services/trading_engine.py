@@ -8,15 +8,17 @@ from ..models.position import Position
 from ..utils.data_storage import DataStorage
 from ..utils.market_time import market_time_manager
 from .market_rules import MarketRulesEngine
+from .currency_service import get_currency_service
 
 
 class TradingEngine:
     """交易引擎"""
-    
+
     def __init__(self, storage: DataStorage, stock_service=None):
         self.storage = storage
         self.market_rules = MarketRulesEngine(storage)
         self.stock_service = stock_service  # 依赖注入，避免循环依赖
+        self.currency_service = get_currency_service(storage)  # 汇率服务
     
     async def place_buy_order(self, user_id: str, stock_code: str, volume: int, 
                             price: Optional[float] = None) -> Tuple[bool, str, Optional[Order]]:
@@ -180,18 +182,22 @@ class TradingEngine:
                 # 非交易时间或价格不满足立即成交条件，挂单等待
                 return await self._place_pending_sell_order(user, order, position)
     
-    async def _execute_buy_order_immediately(self, user: User, order: Order, 
+    async def _execute_buy_order_immediately(self, user: User, order: Order,
                                            stock_info: StockInfo) -> Tuple[bool, str, Order]:
         """立即执行买入订单"""
-        # 1. 计算实际费用
-        total_cost = self.market_rules.calculate_buy_amount(order.order_volume, order.order_price)
-        
+        # 1. 计算实际费用（考虑汇率）
+        total_cost_cny = self.market_rules.calculate_buy_amount(order.order_volume, order.order_price, stock_info.market)
+
         # 2. 检查资金
-        if not user.can_buy(total_cost):
-            return False, f"资金不足，需要{total_cost:.2f}元", order
-        
+        if not user.can_buy(total_cost_cny):
+            # 格式化金额显示
+            market_name = 'A股' if stock_info.market == 'A' else ('港股' if stock_info.market == 'HK' else '美股')
+            formatted_cost = self.currency_service.format_currency(total_cost_cny, 'CNY')
+            formatted_balance = self.currency_service.format_currency(user.balance, 'CNY')
+            return False, f"资金不足，需要{formatted_cost}（{market_name}），可用余额{formatted_balance}", order
+
         # 3. 扣除资金
-        user.deduct_balance(total_cost)
+        user.deduct_balance(total_cost_cny)
         
         # 4. 更新订单状态
         order.fill_order(order.order_volume, order.order_price)
