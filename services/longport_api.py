@@ -225,33 +225,37 @@ class LongPortAPIService:
                 logger.warning("[长桥API] 将使用代码作为名称，开盘价作为昨收价")
                 prev_close = float(quote.open or 0)
 
-            # 计算涨跌幅
-            change_amount = 0
-            change_percent = 0
-            if prev_close > 0 and quote.last_done > 0:
-                change_amount = quote.last_done - prev_close
-                change_percent = (change_amount / prev_close) * 100
+            # 计算涨跌幅（确保类型一致）
+            change_amount = 0.0
+            change_percent = 0.0
+            # 转换为float以避免Decimal和float之间的类型冲突
+            current_price = float(quote.last_done or 0)
+            prev_close_float = float(prev_close)
+
+            if prev_close_float > 0 and current_price > 0:
+                change_amount = current_price - prev_close_float
+                change_percent = (change_amount / prev_close_float) * 100
                 logger.info("[长桥API] 涨跌幅计算:")
-                logger.info("[长桥API]   - 当前价: %s", quote.last_done)
-                logger.info("[长桥API]   - 昨收价(近似): %s", prev_close)
+                logger.info("[长桥API]   - 当前价: %s", current_price)
+                logger.info("[长桥API]   - 昨收价(近似): %s", prev_close_float)
                 logger.info("[长桥API]   - 涨跌额: %s", change_amount)
                 logger.info("[长桥API]   - 涨跌幅: %s%%", change_percent)
             else:
-                logger.warning("[长桥API] 无法计算涨跌幅: 当前价=%s, 昨收价=%s", quote.last_done, prev_close)
+                logger.warning("[长桥API] 无法计算涨跌幅: 当前价=%s, 昨收价=%s", current_price, prev_close_float)
 
             # 转换为统一格式
             result = {
                 'code': symbol,
                 'name': stock_name,
-                'current_price': float(quote.last_done or 0),
+                'current_price': current_price,  # 已经转换为float
                 'open_price': float(quote.open or 0),
-                'close_price': float(quote.prev_close),
+                'close_price': prev_close_float,  # 昨收价（使用开盘价近似）
                 'high_price': float(quote.high or 0),
                 'low_price': float(quote.low or 0),
                 'volume': int(quote.volume or 0),
                 'turnover': float(quote.turnover or 0),
-                'bid1_price': float(quote.last_done or 0),  # 长桥API不提供盘口价，统一使用最新价
-                'ask1_price': float(quote.last_done or 0),
+                'bid1_price': current_price,  # 长桥API不提供盘口价，统一使用最新价
+                'ask1_price': current_price,
                 'change_amount': float(change_amount),
                 'change_percent': float(change_percent),
                 'limit_up': 0,  # 长桥API不直接提供涨跌停价
@@ -407,28 +411,29 @@ class LongPortAPIService:
                         quote = quotes[i]
                         logger.debug("[长桥API] 处理股票 %s (第%d个)", symbol, i + 1)
 
-                        # 获取昨收价（简化处理，使用开盘价）
+                        # 确保类型转换一致，避免Decimal和float的冲突
+                        current_price = float(quote.last_done or 0)
                         prev_close = float(quote.open or 0)
 
                         # 计算涨跌幅
-                        change_amount = 0
-                        change_percent = 0
-                        if prev_close > 0 and quote.last_done > 0:
-                            change_amount = quote.last_done - prev_close
+                        change_amount = 0.0
+                        change_percent = 0.0
+                        if prev_close > 0 and current_price > 0:
+                            change_amount = current_price - prev_close
                             change_percent = (change_amount / prev_close) * 100
 
                         result = {
                             'code': symbol,
                             'name': symbol,
-                            'current_price': float(quote.last_done or 0),
+                            'current_price': current_price,
                             'open_price': float(quote.open or 0),
-                            'close_price': float(prev_close),
+                            'close_price': prev_close,
                             'high_price': float(quote.high or 0),
                             'low_price': float(quote.low or 0),
                             'volume': int(quote.volume or 0),
                             'turnover': float(quote.turnover or 0),
-                            'bid1_price': float(quote.last_done or 0),  # 统一使用最新价
-                            'ask1_price': float(quote.last_done or 0),
+                            'bid1_price': current_price,  # 统一使用最新价
+                            'ask1_price': current_price,
                             'change_amount': float(change_amount),
                             'change_percent': float(change_percent),
                             'limit_up': 0,
