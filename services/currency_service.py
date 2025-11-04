@@ -29,24 +29,34 @@ class CurrencyService:
 
         # 港币转人民币
         if from_currency == "HKD" and to_currency == "CNY":
-            return self.storage.get_plugin_config_value('hkd_to_cny_rate', 0.9200)
+            rate = self.storage.get_plugin_config_value('hkd_to_cny_rate', 0.9200)
+            rate = float(rate) if rate is not None else 0.9200
+            return max(rate, 0.0001)  # 防止为0
 
         # 美元转人民币
         if from_currency == "USD" and to_currency == "CNY":
-            return self.storage.get_plugin_config_value('usd_to_cny_rate', 7.2000)
+            rate = self.storage.get_plugin_config_value('usd_to_cny_rate', 7.2000)
+            rate = float(rate) if rate is not None else 7.2000
+            return max(rate, 0.0001)  # 防止为0
 
         # 人民币转港币
         if from_currency == "CNY" and to_currency == "HKD":
             hkd_rate = self.storage.get_plugin_config_value('hkd_to_cny_rate', 0.9200)
-            return 1.0 / hkd_rate if hkd_rate > 0 else 0.0
+            hkd_rate = float(hkd_rate) if hkd_rate is not None else 0.9200
+            if hkd_rate <= 0:
+                hkd_rate = 0.9200  # 使用默认值
+            return 1.0 / hkd_rate
 
         # 人民币转美元
         if from_currency == "CNY" and to_currency == "USD":
             usd_rate = self.storage.get_plugin_config_value('usd_to_cny_rate', 7.2000)
-            return 1.0 / usd_rate if usd_rate > 0 else 0.0
+            usd_rate = float(usd_rate) if usd_rate is not None else 7.2000
+            if usd_rate <= 0:
+                usd_rate = 7.2000  # 使用默认值
+            return 1.0 / usd_rate
 
         # 不支持的货币对
-        return 0.0
+        return 1.0
 
     def convert_amount(self, amount: float, from_currency: str, to_currency: str = "CNY") -> float:
         """

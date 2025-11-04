@@ -193,24 +193,84 @@ class TradeCoordinator:
             'price_text': price_text
         }
     
-    def format_trading_confirmation(self, stock_name: str, stock_code: str, 
-                                  trade_type: str, volume: int, 
-                                  price: Optional[float], current_price: float) -> str:
+    def format_trading_confirmation(self, stock_name: str, stock_code: str,
+                                  trade_type: str, volume: int,
+                                  price: Optional[float], current_price: float,
+                                  market: str = 'A') -> str:
         """
         格式化交易确认信息
+
+        Args:
+            stock_name: 股票名称
+            stock_code: 股票代码
+            trade_type: 交易类型
+            volume: 数量
+            price: 指定价格
+            current_price: 当前价格
+            market: 市场类型 ('A', 'HK', 'US')
         """
+        # 获取货币信息
+        currency_info = self._get_currency_info(market)
+
+        # 显示价格（原始货币 + 人民币）
         if price:
-            display_price = f"{price:.2f}元"
+            price_local = price
+            price_type = "限价"
         else:
-            display_price = f"{current_price:.2f}元(当前价)"
-        
+            price_local = current_price
+            price_type = "当前价"
+
+        price_cny = price_local * currency_info['rate']
+
+        display_price = (
+            f"{price_type}: {price_local:.2f} {currency_info['symbol']}\n"
+            f"约等于: {price_cny:.2f} CNY"
+        )
+
+        market_name = 'A股' if market == 'A' else ('港股' if market == 'HK' else '美股')
+        rate_info = f"汇率: 1{currency_info['symbol']} = {currency_info['rate']:.4f} CNY"
+
         return (
             f"📋 即将执行交易\n"
-            f"股票: {stock_name} ({stock_code})\n"
-            f"操作: {trade_type}\n" 
+            f"股票: {stock_name} ({stock_code}) [{market_name}]\n"
+            f"操作: {trade_type}\n"
             f"数量: {volume}股\n"
-            f"价格: {display_price}"
+            f"价格:\n{display_price}\n"
+            f"{rate_info}"
         )
+
+    def _get_currency_info(self, market: str) -> Dict[str, Any]:
+        """
+        获取市场对应的货币信息
+
+        Args:
+            market: 市场类型
+
+        Returns:
+            货币信息字典
+        """
+        from .currency_service import get_currency_service
+        currency_service = get_currency_service(self.storage)
+
+        currency_mapping = {
+            'A': {
+                'symbol': 'CNY',
+                'name': '人民币',
+                'rate': 1.0
+            },
+            'HK': {
+                'symbol': 'HKD',
+                'name': '港币',
+                'rate': currency_service.get_exchange_rate('HKD', 'CNY')
+            },
+            'US': {
+                'symbol': 'USD',
+                'name': '美元',
+                'rate': currency_service.get_exchange_rate('USD', 'CNY')
+            }
+        }
+
+        return currency_mapping.get(market, currency_mapping['A'])
     
     def format_stock_candidates(self, candidates: List[Dict[str, str]]) -> str:
         """

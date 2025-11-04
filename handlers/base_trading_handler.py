@@ -121,17 +121,26 @@ class BaseTradingHandler(ABC):
         yield stock_info
     
     async def confirm_trade_with_user(self, event: AstrMessageEvent, stock_name: str, stock_code: str,
-                                    trade_type: str, volume: int, price: Optional[float], 
-                                    current_price: float) -> AsyncGenerator[Any, None]:
+                                    trade_type: str, volume: int, price: Optional[float],
+                                    current_price: float, market: str = 'A') -> AsyncGenerator[Any, None]:
         """
         与用户确认交易的统一流程
-        
+
+        Args:
+            stock_name: 股票名称
+            stock_code: 股票代码
+            trade_type: 交易类型
+            volume: 数量
+            price: 价格
+            current_price: 当前价格
+            market: 市场类型
+
         Yields:
             MessageEventResult: 错误消息（如有）
             bool: 用户确认结果
         """
         confirmation_message = self.trade_coordinator.format_trading_confirmation(
-            stock_name, stock_code, trade_type, volume, price, current_price
+            stock_name, stock_code, trade_type, volume, price, current_price, market
         )
         
         trade_info = {
@@ -262,7 +271,7 @@ class BuyOrderHandler(BaseTradingHandler):
         # 与用户确认交易
         confirmation = None
         async for result in self.confirm_trade_with_user(
-            event, stock_info.name, stock_info.code, trade_type, volume, price, current_price
+            event, stock_info.name, stock_info.code, trade_type, volume, price, current_price, stock_info.market
         ):
             if isinstance(result, MessageEventResult):
                 yield result  # 转发错误消息
@@ -306,7 +315,7 @@ class SellOrderHandler(BaseTradingHandler):
         # 与用户确认交易
         confirmation = None
         async for result in self.confirm_trade_with_user(
-            event, stock_info.name, stock_info.code, trade_type, volume, price, current_price
+            event, stock_info.name, stock_info.code, trade_type, volume, price, current_price, stock_info.market
         ):
             if isinstance(result, MessageEventResult):
                 yield result  # 转发错误消息

@@ -97,7 +97,7 @@ class TradingEngine:
                 return await self._execute_buy_order_immediately(user, order, stock_info)
             else:
                 # 非交易时间或价格不满足立即成交条件，挂单等待
-                return await self._place_pending_buy_order(user, order)
+                return await self._place_pending_buy_order(user, order, stock_info)
     
     async def place_sell_order(self, user_id: str, stock_code: str, volume: int,
                              price: Optional[float] = None) -> Tuple[bool, str, Optional[Order]]:
@@ -164,8 +164,11 @@ class TradingEngine:
         
         # 7. 检查交易时间
         is_trading_time = market_time_manager.is_trading_time()
-        
-        # 8. 处理订单
+
+        # 8. 处理订单（确保position不为None）
+        if not position:
+            return False, "您没有持有该股票，无法卖出", None
+
         if order.is_market_order():
             # 市价单必须在交易时间内立即成交
             if not is_trading_time:
@@ -230,51 +233,78 @@ class TradingEngine:
         self.storage.save_user(user.user_id, user.to_dict())
         self.storage.save_position(user.user_id, order.stock_code, position.to_dict())
         self.storage.save_order(order.order_id, order.to_dict())
-        
-        return True, f"买入成功！{order.stock_name} {order.order_volume}股，价格{order.order_price:.2f}元", order
+
+        # 格式化金额显示
+        formatted_cost = self.currency_service.format_currency(total_cost_cny, 'CNY')
+        price_display = f"{order.order_price:.2f}"
+
+        # 根据市场显示正确的价格单位
+        if stock_info.market == 'HK':
+            price_display += f" HKD (≈{formatted_cost})"
+        elif stock_info.market == 'US':
+            price_display += f" USD (≈{formatted_cost})"
+        else:
+            price_display = f"{formatted_cost} CNY"
+
+        return True, f"买入成功！{order.stock_name} {order.order_volume}股，价格{price_display}，总费用{formatted_cost}", order
     
     async def _execute_sell_order_immediately(self, user: User, order: Order, position: Position,
                                             stock_info: StockInfo) -> Tuple[bool, str, Order]:
         """立即执行卖出订单"""
-        # 1. 计算实际收入
-        total_income = self.market_rules.calculate_sell_amount(order.order_volume, order.order_price)
-        
+        # 1. 计算实际收入（考虑汇率）
+        total_income_cny = self.market_rules.calculate_sell_amount(order.order_volume, order.order_price, stock_info.market)
+
         # 2. 减少持仓
         success = position.reduce_position(order.order_volume)
         if not success:
             return False, "减少持仓失败", order
-        
-        # 3. 增加资金
-        user.add_balance(total_income)
-        
+
+        # 3. 增加资金（以人民币结算）
+        user.add_balance(total_income_cny)
+
         # 4. 更新订单状态
         order.fill_order(order.order_volume, order.order_price)
-        
+
         # 5. 更新持仓市值
         if not position.is_empty():
             position.update_market_data(stock_info.current_price)
-        
+
         # 6. 保存数据
         self.storage.save_user(user.user_id, user.to_dict())
-        
+
         if position.is_empty():
             self.storage.delete_position(user.user_id, order.stock_code)
         else:
             self.storage.save_position(user.user_id, order.stock_code, position.to_dict())
-        
+
         self.storage.save_order(order.order_id, order.to_dict())
-        
-        return True, f"卖出成功！{order.stock_name} {order.order_volume}股，价格{order.order_price:.2f}元，到账{total_income:.2f}元", order
+
+        # 格式化金额显示
+        market_name = 'A股' if stock_info.market == 'A' else ('港股' if stock_info.market == 'HK' else '美股')
+        formatted_income = self.currency_service.format_currency(total_income_cny, 'CNY')
+        price_display = f"{order.order_price:.2f}"
+
+        # 根据市场显示正确的价格单位
+        if stock_info.market == 'HK':
+            price_display += f" HKD (≈{formatted_income})"
+        elif stock_info.market == 'US':
+            price_display += f" USD (≈{formatted_income})"
+        else:
+            price_display = f"{formatted_income} CNY"
+
+        return True, f"卖出成功！{order.stock_name} {order.order_volume}股，价格{price_display}，到账{formatted_income}", order
     
-    async def _place_pending_buy_order(self, user: User, order: Order) -> Tuple[bool, str, Order]:
+    async def _place_pending_buy_order(self, user: User, order: Order, stock_info: StockInfo) -> Tuple[bool, str, Order]:
         """挂买单"""
-        # 1. 冻结资金
-        total_cost = self.market_rules.calculate_buy_amount(order.order_volume, order.order_price)
-        
-        if not user.can_buy(total_cost):
-            return False, f"资金不足，需要{total_cost:.2f}元", order
-        
-        user.deduct_balance(total_cost)
+        # 1. 冻结资金（考虑汇率）
+        total_cost_cny = self.market_rules.calculate_buy_amount(order.order_volume, order.order_price, stock_info.market)
+
+        if not user.can_buy(total_cost_cny):
+            formatted_cost = self.currency_service.format_currency(total_cost_cny, 'CNY')
+            formatted_balance = self.currency_service.format_currency(user.balance, 'CNY')
+            return False, f"资金不足，需要{formatted_cost}，可用余额{formatted_balance}", order
+
+        user.deduct_balance(total_cost_cny)
         
         # 2. 保存挂单
         self.storage.save_order(order.order_id, order.to_dict())
