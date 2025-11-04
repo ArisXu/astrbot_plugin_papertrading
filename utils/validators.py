@@ -5,44 +5,75 @@ from typing import Optional
 
 class Validators:
     """数据验证器"""
-    
+
     @staticmethod
     def is_valid_stock_code(code: str) -> bool:
-        """验证股票代码格式"""
+        """验证股票代码格式（支持A股、港股、美股）"""
         if not code or not isinstance(code, str):
             return False
-        
+
         # 去除前后空格并转换为大写
         code = code.strip().upper()
-        
+
+        # 检查是否已经是完整格式（带市场后缀）
+        if '.HK' in code or '.US' in code or '.A' in code:
+            # 完整格式验证
+            if '.HK' in code:
+                # 港股: 数字.HK
+                base_code = code.split('.')[0]
+                return len(base_code) >= 4 and len(base_code) <= 5 and base_code.isdigit()
+            elif '.US' in code:
+                # 美股: 字母.US
+                base_code = code.split('.')[0]
+                return 1 <= len(base_code) <= 5 and base_code.replace('.', '').isalpha()
+            elif '.A' in code:
+                # A股: 数字.A
+                base_code = code.split('.')[0]
+                return re.match(r'^(00|30|60|68|43|83|87)\d{4}$', base_code)
+
         # A股股票代码格式: 6位数字
         # 上海A股: 60xxxx, 68xxxx
         # 深圳A股: 00xxxx, 30xxxx (创业板)
         # 北交所: 43xxxx, 83xxxx, 87xxxx
-        pattern = r'^(00|30|60|68|43|83|87)\d{4}$'
-        if not re.match(pattern, code):
-            return False
-        
-        # 排除指数代码（不允许交易指数）
-        # A股指数代码规律：
-        # - 深市指数：399xxx格式
-        # - 000xxx开头的都是深市普通股票，不应排除
-        index_codes = {
-            '399001',  # 深证成指
-            '399005',  # 中小100/中小板
-            '399006',  # 创业板指
-            # 注意：000016是深市股票，000300是深市股票，000688是国城矿业
-            # 这些都不应该被排除！指数通过不同的secid格式访问
-        }
-        
-        return code not in index_codes
+        a_stock_pattern = r'^(00|30|60|68|43|83|87)\d{4}$'
+        if re.match(a_stock_pattern, code):
+            # 排除指数代码（不允许交易指数）
+            index_codes = {
+                '399001',  # 深证成指
+                '399005',  # 中小100/中小板
+                '399006',  # 创业板指
+            }
+            return code not in index_codes
+
+        # 港股：通常4-5位数字
+        if code.isdigit() and 4 <= len(code) <= 5:
+            return True
+
+        # 美股：1-5个大写字母
+        if code.isalpha() and 1 <= len(code) <= 5:
+            return True
+
+        return False
     
     @staticmethod
     def normalize_stock_code(code: str) -> Optional[str]:
-        """标准化股票代码"""
-        if not Validators.is_valid_stock_code(code):
+        """标准化股票代码（仅对A股有效）"""
+        if not code or not isinstance(code, str):
             return None
-        return code.strip().upper()
+
+        code = code.strip().upper()
+
+        # 只对A股进行标准化（因为A股的验证规则更严格）
+        a_stock_pattern = r'^(00|30|60|68|43|83|87)\d{4}$'
+        if re.match(a_stock_pattern, code):
+            # 排除指数代码
+            index_codes = {'399001', '399005', '399006'}
+            if code in index_codes:
+                return None
+            return code
+
+        # 港股和美股在StockDataService中处理标准化
+        return code
     
     @staticmethod
     def is_valid_price(price: float) -> bool:

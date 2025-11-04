@@ -59,5 +59,26 @@
     "min": 0.0,
     "max": 0.0001,
     "hint": "股票交易过户费率，买卖双向收取，当前A股为0.002%（0.00002）"
+  },
+  "longport_app_key": {
+    "type": "string",
+    "name": "🔑 长桥API应用密钥",
+    "description": "🔑 长桥API应用密钥（App Key）",
+    "default": "",
+    "hint": "长桥API的App Key，用于访问港股和美股数据"
+  },
+  "longport_app_secret": {
+    "type": "string",
+    "name": "🔐 长桥API应用密钥",
+    "description": "🔐 长桥API应用密钥（App Secret）",
+    "default": "",
+    "hint": "长桥API的App Secret，用于身份验证"
+  },
+  "longport_access_token": {
+    "type": "string",
+    "name": "🔑 长桥API访问令牌",
+    "description": "🔑 长桥API访问令牌（Access Token）",
+    "default": "",
+    "hint": "长桥API的访问令牌，用于获取实时行情"
   }
 }
