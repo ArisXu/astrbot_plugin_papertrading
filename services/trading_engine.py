@@ -223,7 +223,8 @@ class TradingEngine:
                 profit_loss=0,
                 profit_loss_percent=0,
                 last_price=stock_info.current_price,
-                update_time=int(time.time())
+                update_time=int(time.time()),
+                market=stock_info.market  # 保存市场类型
             )
         
         # 6. 更新持仓市值

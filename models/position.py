@@ -12,13 +12,14 @@ class Position:
     stock_name: str                 # 股票名称
     total_volume: int               # 总持仓数量
     available_volume: int           # 可用数量（T+1限制）
-    avg_cost: float                 # 平均成本价
-    total_cost: float               # 总成本
-    market_value: float             # 市值
-    profit_loss: float              # 盈亏
+    avg_cost: float                 # 平均成本价（原始货币）
+    total_cost: float               # 总成本（原始货币）
+    market_value: float             # 市值（原始货币）
+    profit_loss: float              # 盈亏（原始货币）
     profit_loss_percent: float      # 盈亏比例
-    last_price: float               # 最新价格
+    last_price: float               # 最新价格（原始货币）
     update_time: int                # 更新时间
+    market: str = "A"               # 市场类型：'A' (A股), 'HK' (港股), 'US' (美股)
     
     def __post_init__(self):
         """初始化后处理"""

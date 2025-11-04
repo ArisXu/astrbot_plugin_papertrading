@@ -2,6 +2,7 @@
 from typing import List, Dict, Any
 from datetime import datetime
 import time
+from ..utils.data_storage import DataStorage
 
 
 class Formatters:
@@ -44,44 +45,114 @@ class Formatters:
         return "\n".join(lines)
     
     @staticmethod
-    def format_user_info(user: Dict[str, Any], positions: List[Dict[str, Any]], frozen_funds: float = 0.0) -> str:
-        """格式化用户信息（合并持仓、余额、订单查询）"""
+    def format_user_info(user: Dict[str, Any], positions: List[Dict[str, Any]], frozen_funds: float = 0.0, storage: DataStorage = None) -> str:
+        """格式化用户信息（合并持仓、余额、订单查询）
+
+        Args:
+            user: 用户信息字典
+            positions: 持仓列表
+            frozen_funds: 冻结资金
+            storage: 数据存储对象（用于获取汇率）
+
+        Returns:
+            格式化的用户信息
+        """
         lines = [
             f"👤 账户信息",
             f"💰 可用余额: {Formatters.format_currency(user['balance'])}元",
             f"💎 总资产: {Formatters.format_currency(user['total_assets'])}元"
         ]
-        
+
         # 如果有冻结资金，显示冻结资金信息
         if frozen_funds > 0:
             lines.append(f"🔒 冻结资金: {Formatters.format_currency(frozen_funds)}元 (买入挂单)")
             lines.append(f"💳 实际可用: {Formatters.format_currency(user['balance'])}元")
-        
+
         if positions:
             lines.append("\n📊 持仓详情:")
-            total_market_value = 0
-            total_profit_loss = 0
-            
+            total_market_value_cny = 0
+            total_profit_loss_cny = 0
+
             for pos in positions:
                 if pos['total_volume'] > 0:
-                    profit_color = "🟢" if pos['profit_loss'] >= 0 else "🔴"
-                    lines.append(
-                        f"{profit_color} {pos['stock_name']}({pos['stock_code']})\n"
-                        f"   数量: {pos['total_volume']}股 (可卖: {pos['available_volume']}股)\n"
-                        f"   成本: {pos['avg_cost']:.2f}元 现价: {pos['last_price']:.2f}元\n"
-                        f"   市值: {Formatters.format_currency(pos['market_value'])}元\n"
-                        f"   盈亏: {pos['profit_loss']:+.2f}元 ({pos['profit_loss_percent']:+.2f}%)"
-                    )
-                    total_market_value += pos['market_value']
-                    total_profit_loss += pos['profit_loss']
-            
-            lines.append(f"\n💼 持仓市值: {Formatters.format_currency(total_market_value)}元")
-            profit_color = "🟢" if total_profit_loss >= 0 else "🔴"
-            lines.append(f"{profit_color} 总盈亏: {total_profit_loss:+.2f}元")
+                    # 获取市场类型
+                    market = pos.get('market', 'A')
+
+                    # 获取汇率
+                    currency_info = Formatters._get_currency_info_for_market(market, storage)
+
+                    # 转换金额为人民币
+                    market_value_cny = pos['market_value'] * currency_info['rate']
+                    profit_loss_cny = pos['profit_loss'] * currency_info['rate']
+                    avg_cost_local = pos['avg_cost']
+                    last_price_local = pos['last_price']
+
+                    profit_color = "🟢" if profit_loss_cny >= 0 else "🔴"
+
+                    # 根据市场显示不同格式
+                    if market == 'A':
+                        # A股：直接显示人民币
+                        lines.append(
+                            f"{profit_color} {pos['stock_name']}({pos['stock_code']})\n"
+                            f"   数量: {pos['total_volume']}股 (可卖: {pos['available_volume']}股)\n"
+                            f"   成本: {avg_cost_local:.2f}元 现价: {last_price_local:.2f}元\n"
+                            f"   市值: {Formatters.format_currency(market_value_cny)}元\n"
+                            f"   盈亏: {profit_loss_cny:+.2f}元 ({pos['profit_loss_percent']:+.2f}%)"
+                        )
+                    else:
+                        # 港股/美股：显示原始货币和人民币
+                        market_name = "港股" if market == 'HK' else "美股"
+                        symbol = currency_info['symbol']
+
+                        # 计算市值人民币
+                        market_value_local = pos['market_value']
+                        profit_loss_local = pos['profit_loss']
+
+                        lines.append(
+                            f"{profit_color} {pos['stock_name']}({pos['stock_code']}) [{market_name}]\n"
+                            f"   数量: {pos['total_volume']}股 (可卖: {pos['available_volume']}股)\n"
+                            f"   成本: {avg_cost_local:.2f} {symbol} 现价: {last_price_local:.2f} {symbol}\n"
+                            f"   市值: {market_value_local:.2f} {symbol} (≈{Formatters.format_currency(market_value_cny)}元)\n"
+                            f"   盈亏: {profit_loss_local:+.2f} {symbol} (≈{profit_loss_cny:+.2f}元, {pos['profit_loss_percent']:+.2f}%)"
+                        )
+
+                    total_market_value_cny += market_value_cny
+                    total_profit_loss_cny += profit_loss_cny
+
+            lines.append(f"\n💼 持仓市值: {Formatters.format_currency(total_market_value_cny)}元")
+            profit_color = "🟢" if total_profit_loss_cny >= 0 else "🔴"
+            lines.append(f"{profit_color} 总盈亏: {total_profit_loss_cny:+.2f}元")
         else:
             lines.append("\n📊 暂无持仓")
-        
+
         return "\n".join(lines)
+
+    @staticmethod
+    def _get_currency_info_for_market(market: str, storage: DataStorage) -> Dict[str, Any]:
+        """获取市场对应的货币信息"""
+        # 默认信息
+        default_info = {
+            'A': {'symbol': 'CNY', 'rate': 1.0},
+            'HK': {'symbol': 'HKD', 'rate': 0.9200},
+            'US': {'symbol': 'USD', 'rate': 7.2000}
+        }
+
+        info = default_info.get(market, default_info['A'])
+
+        # 如果有storage，获取实际汇率
+        if storage:
+            try:
+                from ..services.currency_service import get_currency_service
+                currency_service = get_currency_service(storage)
+                if market == 'HK':
+                    info['rate'] = currency_service.get_exchange_rate('HKD', 'CNY')
+                elif market == 'US':
+                    info['rate'] = currency_service.get_exchange_rate('USD', 'CNY')
+            except Exception:
+                # 忽略错误，使用默认值
+                pass
+
+        return info
     
     @staticmethod
     def format_order_info(order: Dict[str, Any]) -> str:

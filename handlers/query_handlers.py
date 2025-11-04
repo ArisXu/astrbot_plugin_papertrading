@@ -54,8 +54,8 @@ class QueryCommandHandlers:
             # 获取冻结资金
             frozen_funds = self.trade_coordinator.storage.calculate_frozen_funds(user_id)
             
-            # 格式化输出
-            info_text = Formatters.format_user_info(user.to_dict(), positions, frozen_funds)
+            # 格式化输出（传递storage以支持汇率显示）
+            info_text = Formatters.format_user_info(user.to_dict(), positions, frozen_funds, self.trade_coordinator.storage)
             
             # 添加待成交订单信息
             pending_orders = [order for order in self.trade_coordinator.storage.get_orders(user_id) if order.get('status') == 'pending']
