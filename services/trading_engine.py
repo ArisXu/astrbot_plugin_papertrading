@@ -1,6 +1,7 @@
 """交易引擎"""
 import time
 from typing import Optional, Tuple, Dict, Any
+from astrbot.api import logger
 from ..models.user import User
 from ..models.stock import StockInfo
 from ..models.order import Order, OrderType, OrderStatus, PriceType
@@ -20,84 +21,118 @@ class TradingEngine:
         self.stock_service = stock_service  # 依赖注入，避免循环依赖
         self.currency_service = get_currency_service(storage)  # 汇率服务
     
-    async def place_buy_order(self, user_id: str, stock_code: str, volume: int, 
+    async def place_buy_order(self, user_id: str, stock_code: str, volume: int,
                             price: Optional[float] = None) -> Tuple[bool, str, Optional[Order]]:
         """下买单"""
-        # 1. 获取用户信息
-        user_data = self.storage.get_user(user_id)
-        if not user_data:
-            return False, "用户未注册，请先使用 /股票注册 注册账户", None
-        
-        user = User.from_dict(user_data)
-        
-        # 2. 获取股票信息
-        if not self.stock_service:
-            from .stock_data import StockDataService
-            self.stock_service = StockDataService(self.storage)
-        stock_info = await self.stock_service.get_stock_info(stock_code)
-        
-        if not stock_info:
-            return False, f"无法获取股票{stock_code}的信息", None
-        
-        # 3. 确定订单价格和类型
-        if price is None:
-            # 市价单
-            order_price = stock_info.get_market_buy_price()
-            price_type = PriceType.MARKET
-        else:
-            # 限价单
-            order_price = price
-            price_type = PriceType.LIMIT
-        
-        # 4. 创建订单（暂不生成订单号）
-        order = Order(
-            order_id="",  # 验证通过后再生成
-            user_id=user_id,
-            stock_code=stock_code,
-            stock_name=stock_info.name,
-            order_type=OrderType.BUY,
-            price_type=price_type,
-            order_price=order_price,
-            order_volume=volume,
-            filled_volume=0,
-            filled_amount=0,
-            status=OrderStatus.PENDING,
-            create_time=0,  # 将在__post_init__中生成
-            update_time=0   # 将在__post_init__中生成
-        )
-        
-        # 5. 市场规则验证（包含涨停跌停检查）
-        is_valid, error_msg = self.market_rules.validate_buy_order(stock_info, order, user.balance)
-        if not is_valid:
-            return False, error_msg, None
-        
-        # 验证通过后生成订单号
-        if hasattr(self.storage, 'get_next_order_number'):
-            order.order_id = self.storage.get_next_order_number()
-        else:
-            # 兜底方案：使用时间戳+随机数
-            import uuid
-            order.order_id = str(int(time.time() * 1000))[-8:] + str(uuid.uuid4())[-4:]
-        
-        # 6. 检查交易时间
-        is_trading_time = market_time_manager.is_trading_time()
-        
-        # 7. 处理订单
-        if order.is_market_order():
-            # 市价单必须在交易时间内立即成交
-            if not is_trading_time:
-                return False, "市价单只能在交易时间内下单", None
-            order.order_price = stock_info.current_price
-            return await self._execute_buy_order_immediately(user, order, stock_info)
-        else:
-            # 限价单处理
-            if is_trading_time and order.order_price >= stock_info.current_price:
-                # 交易时间内且可以立即成交，使用当前价格
+        logger.info(f"[place_buy_order] 开始下单: user={user_id}, stock={stock_code}, volume={volume}, price={price}")
+
+        try:
+            # 1. 获取用户信息
+            logger.info("[place_buy_order] 步骤1: 获取用户信息")
+            user_data = self.storage.get_user(user_id)
+            if not user_data:
+                logger.warning("[place_buy_order] 用户未注册")
+                return False, "用户未注册，请先使用 /股票注册 注册账户", None
+
+            user = User.from_dict(user_data)
+            logger.info(f"[place_buy_order] 用户余额: {user.balance}")
+
+            # 2. 获取股票信息
+            logger.info("[place_buy_order] 步骤2: 获取股票信息")
+            if not self.stock_service:
+                logger.info("[place_buy_order] 初始化股票服务")
+                from .stock_data import StockDataService
+                self.stock_service = StockDataService(self.storage)
+
+            stock_info = await self.stock_service.get_stock_info(stock_code)
+            logger.info(f"[place_buy_order] 股票信息: {stock_info}")
+
+            if not stock_info:
+                logger.warning(f"[place_buy_order] 无法获取股票信息: {stock_code}")
+                return False, f"无法获取股票{stock_code}的信息", None
+
+            logger.info(f"[place_buy_order] 股票市场: {stock_info.market}, 当前价格: {stock_info.current_price}")
+
+            # 3. 确定订单价格和类型
+            logger.info("[place_buy_order] 步骤3: 确定订单价格和类型")
+            if price is None:
+                # 市价单
+                order_price = stock_info.get_market_buy_price()
+                price_type = PriceType.MARKET
+                logger.info(f"[place_buy_order] 市价单，价格: {order_price}")
+            else:
+                # 限价单
+                order_price = price
+                price_type = PriceType.LIMIT
+                logger.info(f"[place_buy_order] 限价单，价格: {order_price}")
+
+            # 4. 创建订单（暂不生成订单号）
+            logger.info("[place_buy_order] 步骤4: 创建订单对象")
+            order = Order(
+                order_id="",  # 验证通过后再生成
+                user_id=user_id,
+                stock_code=stock_code,
+                stock_name=stock_info.name,
+                order_type=OrderType.BUY,
+                price_type=price_type,
+                order_price=order_price,
+                order_volume=volume,
+                filled_volume=0,
+                filled_amount=0,
+                status=OrderStatus.PENDING,
+                create_time=0,  # 将在__post_init__中生成
+                update_time=0   # 将在__post_init__中生成
+            )
+            logger.info(f"[place_buy_order] 订单创建完成: {order.order_type}, {order.price_type}")
+
+            # 5. 市场规则验证（包含涨停跌停检查）
+            logger.info("[place_buy_order] 步骤5: 市场规则验证")
+            is_valid, error_msg = self.market_rules.validate_buy_order(stock_info, order, user.balance)
+
+            if not is_valid:
+                logger.warning(f"[place_buy_order] 验证失败: {error_msg}")
+                return False, error_msg, None
+
+            logger.info("[place_buy_order] 验证通过")
+
+            # 验证通过后生成订单号
+            if hasattr(self.storage, 'get_next_order_number'):
+                order.order_id = self.storage.get_next_order_number()
+            else:
+                # 兜底方案：使用时间戳+随机数
+                import uuid
+                order.order_id = str(int(time.time() * 1000))[-8:] + str(uuid.uuid4())[-4:]
+
+            # 6. 检查交易时间
+            logger.info("[place_buy_order] 步骤6: 检查交易时间")
+            is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
+            logger.info(f"[place_buy_order] {stock_info.market}市场是否在交易时间: {is_trading_time}")
+
+            # 7. 处理订单
+            logger.info("[place_buy_order] 步骤7: 处理订单")
+            if order.is_market_order():
+                # 市价单必须在交易时间内立即成交
+                if not is_trading_time:
+                    logger.warning(f"[place_buy_order] 市价单只能在交易时间内下单，当前市场: {stock_info.market}")
+                    return False, "市价单只能在交易时间内下单", None
                 order.order_price = stock_info.current_price
+                logger.info(f"[place_buy_order] 执行市价买单，价格: {order.order_price}")
                 return await self._execute_buy_order_immediately(user, order, stock_info)
             else:
-                # 非交易时间或价格不满足立即成交条件，挂单等待
-                return await self._place_pending_buy_order(user, order, stock_info)
+                # 限价单处理
+                if is_trading_time and order.order_price >= stock_info.current_price:
+                    # 交易时间内且可以立即成交，使用当前价格
+                    order.order_price = stock_info.current_price
+                    logger.info(f"[place_buy_order] 执行限价买单（立即成交），价格: {order.order_price}")
+                    return await self._execute_buy_order_immediately(user, order, stock_info)
+                else:
+                    # 非交易时间或价格不满足立即成交条件，挂单等待
+                    logger.info("[place_buy_order] 挂单等待")
+                    return await self._place_pending_buy_order(user, order, stock_info)
+
+        except Exception as e:
+            logger.error(f"[place_buy_order] 下单过程出错: {e}", exc_info=True)
+            return False, f"下单失败: {str(e)}", None
     
     async def place_sell_order(self, user_id: str, stock_code: str, volume: int,
                              price: Optional[float] = None) -> Tuple[bool, str, Optional[Order]]:
@@ -163,7 +198,7 @@ class TradingEngine:
             order.order_id = str(int(time.time() * 1000))[-8:] + str(uuid.uuid4())[-4:]
         
         # 7. 检查交易时间
-        is_trading_time = market_time_manager.is_trading_time()
+        is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
 
         # 8. 处理订单（确保position不为None）
         if not position:
@@ -183,7 +218,7 @@ class TradingEngine:
                 return await self._execute_sell_order_immediately(user, order, position, stock_info)
             else:
                 # 非交易时间或价格不满足立即成交条件，挂单等待
-                return await self._place_pending_sell_order(user, order, position)
+                return await self._place_pending_sell_order(user, order, position, stock_info)
     
     async def _execute_buy_order_immediately(self, user: User, order: Order,
                                            stock_info: StockInfo) -> Tuple[bool, str, Order]:
@@ -312,7 +347,7 @@ class TradingEngine:
         self.storage.save_user(user.user_id, user.to_dict())
         
         # 根据交易时间给出不同的提示信息
-        is_trading_time = market_time_manager.is_trading_time()
+        is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
         if is_trading_time:
             message = f"买入挂单成功！{order.stock_name} {order.order_volume}股，价格{order.order_price:.2f}元，订单号{order.order_id}"
         else:
@@ -320,21 +355,21 @@ class TradingEngine:
         
         return True, message, order
     
-    async def _place_pending_sell_order(self, user: User, order: Order, position: Position) -> Tuple[bool, str, Order]:
+    async def _place_pending_sell_order(self, user: User, order: Order, position: Position, stock_info: StockInfo) -> Tuple[bool, str, Order]:
         """挂卖单"""
         # 1. 冻结股票（这里简化处理，实际应该单独记录冻结数量）
         # 为简化，我们不实际冻结，在成交时再次检查
-        
+
         # 2. 保存挂单
         self.storage.save_order(order.order_id, order.to_dict())
-        
+
         # 根据交易时间给出不同的提示信息
-        is_trading_time = market_time_manager.is_trading_time()
+        is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
         if is_trading_time:
             message = f"卖出挂单成功！{order.stock_name} {order.order_volume}股，价格{order.order_price:.2f}元，订单号{order.order_id}"
         else:
             message = f"隔夜卖单挂单成功！{order.stock_name} {order.order_volume}股，价格{order.order_price:.2f}元，将在交易时间成交，订单号{order.order_id}"
-        
+
         return True, message, order
     
     async def cancel_order(self, user_id: str, order_id: str) -> Tuple[bool, str]:
