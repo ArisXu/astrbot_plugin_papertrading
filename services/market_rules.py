@@ -1,6 +1,7 @@
 """A股市场规则引擎"""
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Tuple
+from astrbot.api import logger
 from ..models.stock import StockInfo
 from ..models.order import Order, OrderType
 from ..models.position import Position
@@ -25,9 +26,14 @@ class MarketRulesEngine:
         if stock_info:
             # 根据股票信息确定市场
             market = stock_info.market
-            return market_time_manager.can_place_order(market=market)
+            logger.info(f"[交易时间验证] 股票市场: {market}, 股票代码: {stock_info.code}")
+
+            result = market_time_manager.can_place_order(market=market)
+            logger.info(f"[交易时间验证] 结果: {result}")
+            return result
         else:
             # 如果没有股票信息，默认使用A股
+            logger.warning("[交易时间验证] 没有股票信息，使用默认A股验证")
             return market_time_manager.can_place_order()
     
     def validate_buy_order(self, stock_info: StockInfo, order: Order, user_balance: float) -> Tuple[bool, str]:

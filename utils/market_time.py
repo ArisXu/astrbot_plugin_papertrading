@@ -643,32 +643,53 @@ class MarketTimeManager:
         if market is None:
             market = self.default_market
 
+        logger.info(f"[can_place_order] 市场: {market}, UTC时间: {target_time}")
+
         # 转换为目标市场的本地时间
         market_time = self._convert_to_market_time(target_time, market)
+        logger.info(f"[can_place_order] {market}市场本地时间: {market_time}")
 
         # 检查是否为交易日
         if not self.is_trading_day(market_time.date(), market):
             if not self.is_weekday(market_time.date()):
+                logger.warning(f"[can_place_order] {market}市场今日为周末")
                 return False, f"{market}市场今日为周末，不可交易"
             else:
+                logger.warning(f"[can_place_order] {market}市场今日为法定节假日")
                 return False, f"{market}市场今日为法定节假日，不可交易"
 
         # 检查具体时间
         market_config = self.market_configs[market]
         current_time = market_time.time()
+        logger.info(f"[can_place_order] {market}市场当前时间: {current_time}")
 
         # 基本交易时间
-        if self.is_trading_time(target_time, market):
+        is_regular_trading = self.is_trading_time(target_time, market)
+        is_call_auction = self.is_call_auction_time(target_time, market)
+        logger.info(f"[can_place_order] 是否正常交易时间: {is_regular_trading}, 是否集合竞价: {is_call_auction}")
+
+        if is_regular_trading:
+            logger.info(f"[can_place_order] {market}市场正常交易时间，允许下单")
             return True, f"{market}市场正常交易时间"
-        elif self.is_call_auction_time(target_time, market):
+        elif is_call_auction:
+            logger.info(f"[can_place_order] {market}市场集合竞价时间，允许下单")
             return True, f"{market}市场集合竞价时间"
-        elif market == 'US':
-            # 美股特殊时段检查（包含夜盘）
-            if self.is_pre_market_time(target_time, market):
+
+        # 美股特殊时段检查（包含夜盘）
+        if market == 'US':
+            is_pre_market = self.is_pre_market_time(target_time, market)
+            is_after_hours = self.is_after_hours_time(target_time, market)
+            is_overnight = self.is_overnight_trading_time(target_time, market)
+            logger.info(f"[can_place_order] 美股特殊时段 - 盘前: {is_pre_market}, 盘后: {is_after_hours}, 夜盘: {is_overnight}")
+
+            if is_pre_market:
+                logger.info("[can_place_order] 美股盘前交易时间，允许下单")
                 return True, "美股盘前交易时间"
-            elif self.is_after_hours_time(target_time, market):
+            elif is_after_hours:
+                logger.info("[can_place_order] 美股盘后交易时间，允许下单")
                 return True, "美股盘后交易时间"
-            elif self.is_overnight_trading_time(target_time, market):
+            elif is_overnight:
+                logger.info("[can_place_order] 美股夜盘交易时间，允许下单")
                 return True, "美股夜盘交易时间（长桥）"
 
         # A股和港股的时间段判断
@@ -676,21 +697,29 @@ class MarketTimeManager:
             # 根据各市场的具体时间安排判断
             if market == 'A':
                 if current_time < dt_time(9, 15):
+                    logger.warning(f"[can_place_order] A股尚未到开盘时间: {current_time}")
                     return False, "A股尚未到开盘时间"
                 elif dt_time(9, 25) < current_time < dt_time(9, 30):
+                    logger.warning(f"[can_place_order] A股开盘前准备时间: {current_time}")
                     return False, "A股开盘前准备时间"
                 elif dt_time(11, 30) < current_time < dt_time(13, 0):
+                    logger.warning(f"[can_place_order] A股午间休市时间: {current_time}")
                     return False, "A股午间休市时间"
                 elif current_time > dt_time(15, 0):
+                    logger.warning(f"[can_place_order] A股已过收盘时间: {current_time}")
                     return False, "A股已过收盘时间"
             elif market == 'HK':
                 if current_time < dt_time(9, 30):
+                    logger.warning(f"[can_place_order] 港股尚未到开盘时间: {current_time}")
                     return False, "港股尚未到开盘时间"
                 elif dt_time(12, 0) < current_time < dt_time(13, 0):
+                    logger.warning(f"[can_place_order] 港股午间休市时间: {current_time}")
                     return False, "港股午间休市时间"
                 elif current_time > dt_time(16, 0):
+                    logger.warning(f"[can_place_order] 港股已过收盘时间: {current_time}")
                     return False, "港股已过收盘时间"
 
+        logger.warning(f"[can_place_order] {market}市场非交易时间，当前时间: {current_time}")
         return False, f"{market}市场非交易时间"
 
 
