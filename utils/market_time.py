@@ -18,7 +18,7 @@ class MarketTimeManager:
         # 定义各市场的交易时间（均为当地时间）
         self.market_configs = {
             'A': {  # A股
-                'timezone': UTC8,
+                'timezone': MarketTimeManager.UTC8,
                 'trading_sessions': [
                     (dt_time(9, 30), dt_time(11, 30)),   # 上午交易时间
                     (dt_time(13, 0), dt_time(15, 0))     # 下午交易时间
@@ -30,7 +30,7 @@ class MarketTimeManager:
                 'holidays': self._get_chinese_holidays()
             },
             'HK': {  # 港股
-                'timezone': UTC8,
+                'timezone': MarketTimeManager.UTC8,
                 'trading_sessions': [
                     (dt_time(9, 30), dt_time(12, 0)),    # 上午交易时间
                     (dt_time(13, 0), dt_time(16, 0))     # 下午交易时间
@@ -42,7 +42,7 @@ class MarketTimeManager:
                 'holidays': self._get_hk_holidays()
             },
             'US': {  # 美股
-                'timezone': EDT,  # 美股使用东部夏令时（3-11月）
+                'timezone': MarketTimeManager.EDT,  # 美股使用东部夏令时（3-11月）
                 'trading_sessions': [
                     (dt_time(9, 30), dt_time(16, 0))     # 正常交易时间（美东时间）
                 ],
