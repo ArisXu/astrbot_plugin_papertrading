@@ -339,14 +339,20 @@ class StockDataService:
         """
         return is_call_auction_time()
     
-    def can_place_order(self) -> tuple[bool, str]:
+    def can_place_order(self, stock_info: StockInfo = None) -> tuple[bool, str]:
         """
         检查是否可以下单
-        
+
+        Args:
+            stock_info: 股票信息，用于确定市场类型
+
         Returns:
             (是否可以下单, 原因说明)
         """
-        return can_place_order()
+        if stock_info and hasattr(stock_info, 'market'):
+            return can_place_order(market=stock_info.market)
+        else:
+            return can_place_order()
     
     async def search_stock(self, keyword: str) -> list:
         """
@@ -599,20 +605,24 @@ class StockDataService:
 
         return results
     
-    def get_market_status(self) -> Dict[str, Any]:
+    def get_market_status(self, market: str = None) -> Dict[str, Any]:
         """
         获取市场状态信息
-        
+
+        Args:
+            market: 市场类型（'A', 'HK', 'US'），默认为A股
+
         Returns:
             市场状态字典
         """
         current_time = datetime.now()
-        can_order, reason = can_place_order(current_time)
-        
+        can_order, reason = can_place_order(current_time, market)
+
         return {
             'current_time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'is_trading_time': is_trading_time(current_time),
-            'is_call_auction_time': is_call_auction_time(current_time),
+            'market': market or 'A',
+            'is_trading_time': is_trading_time(current_time, market),
+            'is_call_auction_time': is_call_auction_time(current_time, market),
             'can_place_order': can_order,
             'reason': reason,
             'cache_ttl': self._cache_ttl

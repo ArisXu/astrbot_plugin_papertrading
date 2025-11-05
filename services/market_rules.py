@@ -16,16 +16,26 @@ class MarketRulesEngine:
         self.storage = storage
         self.currency_service = get_currency_service(storage)  # 汇率服务
     
-    def validate_trading_time(self) -> Tuple[bool, str]:
-        """验证交易时间（使用统一的市场时间管理器）"""
-        return market_time_manager.can_place_order()
+    def validate_trading_time(self, stock_info: StockInfo = None) -> Tuple[bool, str]:
+        """验证交易时间（使用统一的市场时间管理器）
+
+        Args:
+            stock_info: 股票信息，用于确定市场类型
+        """
+        if stock_info:
+            # 根据股票信息确定市场
+            market = stock_info.market
+            return market_time_manager.can_place_order(market=market)
+        else:
+            # 如果没有股票信息，默认使用A股
+            return market_time_manager.can_place_order()
     
     def validate_buy_order(self, stock_info: StockInfo, order: Order, user_balance: float) -> Tuple[bool, str]:
         """验证买入订单"""
         # 1. 检查交易时间（限价单可以在任何时候下单）
         if order.is_market_order():
             # 市价单需要在交易时间内
-            time_valid, time_msg = self.validate_trading_time()
+            time_valid, time_msg = self.validate_trading_time(stock_info)
             if not time_valid:
                 return False, time_msg + "（市价单需要在交易时间内下单）"
 
@@ -71,7 +81,7 @@ class MarketRulesEngine:
         # 1. 检查交易时间（限价单可以在任何时候下单）
         if order.is_market_order():
             # 市价单需要在交易时间内
-            time_valid, time_msg = self.validate_trading_time()
+            time_valid, time_msg = self.validate_trading_time(stock_info)
             if not time_valid:
                 return False, time_msg + "（市价单需要在交易时间内下单）"
 
