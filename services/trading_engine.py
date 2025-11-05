@@ -105,23 +105,25 @@ class TradingEngine:
 
             # 6. 检查交易时间
             logger.info("[place_buy_order] 步骤6: 检查交易时间")
-            is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
-            logger.info(f"[place_buy_order] {stock_info.market}市场是否在交易时间: {is_trading_time}")
+            can_trade, trade_msg = market_time_manager.can_place_order(market=stock_info.market)
+            logger.info(f"[place_buy_order] {stock_info.market}市场是否可以交易: {can_trade}, 原因: {trade_msg}")
 
             # 7. 处理订单
             logger.info("[place_buy_order] 步骤7: 处理订单")
             if order.is_market_order():
-                # 市价单必须在交易时间内立即成交
-                if not is_trading_time:
-                    logger.warning(f"[place_buy_order] 市价单只能在交易时间内下单，当前市场: {stock_info.market}")
+                # 市价单必须在可交易时间内立即成交
+                if not can_trade:
+                    logger.warning(f"[place_buy_order] 市价单只能在可交易时间内下单，当前市场: {stock_info.market}")
                     return False, "市价单只能在交易时间内下单", None
                 order.order_price = stock_info.current_price
                 logger.info(f"[place_buy_order] 执行市价买单，价格: {order.order_price}")
                 return await self._execute_buy_order_immediately(user, order, stock_info)
             else:
                 # 限价单处理
-                if is_trading_time and order.order_price >= stock_info.current_price:
-                    # 交易时间内且可以立即成交，使用当前价格
+                # 对于限价单，即使不在交易时间也可以下单（挂单）
+                # 所以这里不需要检查 can_trade，直接判断是否可立即成交
+                if can_trade and order.order_price >= stock_info.current_price:
+                    # 可交易且价格满足，使用当前价格立即成交
                     order.order_price = stock_info.current_price
                     logger.info(f"[place_buy_order] 执行限价买单（立即成交），价格: {order.order_price}")
                     return await self._execute_buy_order_immediately(user, order, stock_info)
