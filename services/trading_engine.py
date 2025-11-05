@@ -376,19 +376,30 @@ class TradingEngine:
         user_data = self.storage.get_user(user_id)
         if not user_data:
             return
-        
+
         user = User.from_dict(user_data)
         positions = self.storage.get_positions(user_id)
-        
-        # 计算持仓市值
+
+        # 计算持仓市值（考虑汇率转换为人民币）
         total_market_value = 0
         for pos_data in positions:
-            total_market_value += pos_data.get('market_value', 0)
-        
+            market = pos_data.get('market', 'A')
+            market_value_local = pos_data.get('market_value', 0)
+            # 将市值转换为人民币
+            if market == 'A':
+                # A股直接用人民币计价
+                total_market_value += market_value_local
+            else:
+                # 港股美股需要汇率转换
+                rate = self.currency_service.get_exchange_rate(
+                    self.currency_service.get_currency_by_market(market), 'CNY'
+                )
+                total_market_value += market_value_local * rate
+
         # 计算冻结资金（买入挂单占用的资金）
         frozen_funds = self.storage.calculate_frozen_funds(user_id)
-        
-        # 更新总资产：可用余额 + 持仓市值 + 冻结资金
+
+        # 更新总资产：可用余额 + 持仓市值（人民币） + 冻结资金（人民币）
         total_assets = user.balance + total_market_value + frozen_funds
         user.update_total_assets(total_assets)
         self.storage.save_user(user_id, user.to_dict())
@@ -398,21 +409,39 @@ class TradingEngine:
         user_data = self.storage.get_user(user_id)
         if not user_data:
             return {}
-        
+
         user = User.from_dict(user_data)
         positions = self.storage.get_positions(user_id)
         orders = self.storage.get_orders(user_id)
-        
-        # 计算统计数据
-        total_market_value = sum(pos.get('market_value', 0) for pos in positions)
-        total_profit_loss = sum(pos.get('profit_loss', 0) for pos in positions)
+
+        # 计算统计数据（考虑汇率转换为人民币）
+        total_market_value_cny = 0
+        total_profit_loss_cny = 0
+        for pos in positions:
+            market = pos.get('market', 'A')
+            market_value_local = pos.get('market_value', 0)
+            profit_loss_local = pos.get('profit_loss', 0)
+
+            # 将市值和盈亏转换为人民币
+            if market == 'A':
+                # A股直接用人民币计价
+                total_market_value_cny += market_value_local
+                total_profit_loss_cny += profit_loss_local
+            else:
+                # 港股美股需要汇率转换
+                rate = self.currency_service.get_exchange_rate(
+                    self.currency_service.get_currency_by_market(market), 'CNY'
+                )
+                total_market_value_cny += market_value_local * rate
+                total_profit_loss_cny += profit_loss_local * rate
+
         total_positions = len([pos for pos in positions if pos.get('total_volume', 0) > 0])
         pending_orders = len([order for order in orders if order.get('status') == 'pending'])
-        
+
         return {
             'user': user.to_dict(),
-            'total_market_value': total_market_value,
-            'total_profit_loss': total_profit_loss,
+            'total_market_value': total_market_value_cny,
+            'total_profit_loss': total_profit_loss_cny,
             'total_positions': total_positions,
             'pending_orders': pending_orders,
             'positions': positions,

@@ -42,6 +42,35 @@ class DataStorage:
     def _get_file_path(self, filename: str) -> Path:
         """获取文件路径"""
         return self.data_dir / filename
+
+    def _get_market_by_stock_code(self, stock_code: str) -> str:
+        """根据股票代码判断市场类型
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            市场类型：'A' (A股), 'HK' (港股), 'US' (美股)
+        """
+        if not stock_code:
+            return 'A'  # 默认为A股
+
+        stock_code = stock_code.strip().upper()
+
+        # 美股：1-5个大写字母
+        if len(stock_code) <= 5 and stock_code.isalpha():
+            return 'US'
+
+        # A股：6位数字或带sz/sh前缀
+        if stock_code.isdigit() and len(stock_code) == 6:
+            return 'A'
+
+        # 港股：通常5位数字
+        if stock_code.isdigit() and len(stock_code) == 5:
+            return 'HK'
+
+        # 默认返回A股
+        return 'A'
     
     def _load_json(self, filename: str) -> Dict[str, Any]:
         """加载JSON文件"""
@@ -148,26 +177,30 @@ class DataStorage:
     def calculate_frozen_funds(self, user_id: str) -> float:
         """计算用户的冻结资金（买入挂单占用的资金）"""
         pending_buy_orders = self.get_user_pending_buy_orders(user_id)
-        total_frozen = 0.0
-        
+        total_frozen_cny = 0.0
+
         # 导入market_rules来计算买入金额
         try:
             from ..services.market_rules import MarketRulesEngine
             market_rules = MarketRulesEngine(self)
-            
+
             for order in pending_buy_orders:
                 order_volume = order.get('order_volume', 0)
                 order_price = order.get('order_price', 0)
+                # 获取订单的市场类型（用于汇率转换）
+                stock_code = order.get('stock_code', '')
+                market = self._get_market_by_stock_code(stock_code)
+
                 if order_volume > 0 and order_price > 0:
-                    # 计算包含手续费的总成本
-                    total_cost = market_rules.calculate_buy_amount(order_volume, order_price)
-                    total_frozen += total_cost
-                    
+                    # 计算包含手续费的总成本（考虑汇率转换为人民币）
+                    total_cost_cny = market_rules.calculate_buy_amount(order_volume, order_price, market)
+                    total_frozen_cny += total_cost_cny
+
         except Exception as e:
             from astrbot.api import logger
             logger.error(f"计算冻结资金失败: {e}")
-            
-        return total_frozen
+
+        return total_frozen_cny
     
     def get_user_order_history(self, user_id: str, page: int = 1, page_size: int = 10) -> Dict[str, Any]:
         """
