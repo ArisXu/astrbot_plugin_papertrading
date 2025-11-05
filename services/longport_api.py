@@ -293,7 +293,7 @@ class LongPortAPIService:
                 logger.info("[长桥API]   - 交易时段: 正常交易时间")
 
             logger.info("[长桥API] 原始报价数据:")
-            logger.info("[长桥API]   - symbol: %s", active_quote.symbol)
+            logger.info("[长桥API]   - symbol: %s", quote.symbol)
             logger.info("[长桥API]   - last_done: %s", active_quote.last_done)
             logger.info("[长桥API]   - open: %s", quote.open)
             logger.info("[长桥API]   - high: %s", active_quote.high)
