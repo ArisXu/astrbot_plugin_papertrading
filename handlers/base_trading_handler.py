@@ -202,7 +202,18 @@ class BaseTradingHandler(ABC):
         
         if not stock_info:
             return
-        
+
+        # 3.5. 验证交易数量是否符合市场规则
+        from ..utils.validators import Validators
+        if not Validators.is_valid_volume(params['volume'], stock_info.market):
+            if stock_info.market == 'US':
+                error_msg = f"❌ 无效的交易数量: {params['volume']}，必须是正整数"
+            else:
+                market_name = 'A股' if stock_info.market == 'A' else '港股'
+                error_msg = f"❌ 无效的交易数量: {params['volume']}，{market_name}必须是100的倍数"
+            yield MessageEventResult().message(error_msg)
+            return
+
         # 4. 解析价格（如果有）
         price = None
         if params.get('price_text'):

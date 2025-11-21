@@ -202,8 +202,9 @@ class TradeCoordinator:
         # 解析数量
         try:
             volume = int(params[1])
-            if not Validators.is_valid_volume(volume):
-                return False, f"❌ 无效的交易数量: {volume}，必须是100的倍数", None
+            # 先只做基本验证(正整数),市场特定规则稍后验证
+            if volume <= 0:
+                return False, f"❌ 无效的交易数量: {volume}，必须是正整数", None
         except (ValueError, IndexError):
             return False, f"❌ 数量格式错误: {params[1]}", None
         

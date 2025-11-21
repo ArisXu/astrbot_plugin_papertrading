@@ -81,10 +81,30 @@ class Validators:
         return price > 0 and price < 10000  # 假设股价不会超过10000元
     
     @staticmethod
-    def is_valid_volume(volume: int) -> bool:
-        """验证交易数量是否有效"""
-        # A股最小交易单位是100股（1手）
-        return volume > 0 and volume % 100 == 0
+    def is_valid_volume(volume: int, market: str = 'A') -> bool:
+        """验证交易数量是否有效
+
+        Args:
+            volume: 交易数量
+            market: 市场类型 ('A'=A股, 'HK'=港股, 'US'=美股)
+
+        Returns:
+            是否有效
+
+        规则:
+            - A股: 必须是100的倍数(1手=100股)
+            - 港股: 必须是100的倍数(1手=100股)
+            - 美股: 无整手限制,任意正整数即可
+        """
+        if volume <= 0:
+            return False
+
+        # 美股没有整手限制
+        if market == 'US':
+            return True
+
+        # A股和港股必须是100的倍数
+        return volume % 100 == 0
     
     @staticmethod
     def is_valid_amount(amount: float) -> bool:
@@ -138,8 +158,9 @@ class Validators:
         # 解析数量
         try:
             volume = int(params[1])
-            if not Validators.is_valid_volume(volume):
-                result['error'] = f"无效的交易数量: {volume}，必须是100的倍数"
+            # 先只验证是否为正整数,市场特定规则需要在知道市场类型后验证
+            if volume <= 0:
+                result['error'] = f"无效的交易数量: {volume}，必须是正整数"
                 return result
             result['volume'] = volume
         except ValueError:
