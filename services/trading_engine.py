@@ -272,6 +272,9 @@ class TradingEngine:
         self.storage.save_position(user.user_id, order.stock_code, position.to_dict())
         self.storage.save_order(order.order_id, order.to_dict())
 
+        # 8. 更新总资产（校正）
+        await self.update_user_assets(user.user_id)
+
         # 格式化金额显示
         formatted_cost = self.currency_service.format_currency(total_cost_cny, 'CNY')
         price_display = f"{order.order_price:.2f}"
@@ -317,6 +320,9 @@ class TradingEngine:
 
         self.storage.save_order(order.order_id, order.to_dict())
 
+        # 7. 更新总资产（校正）
+        await self.update_user_assets(user.user_id)
+
         # 格式化金额显示
         market_name = 'A股' if stock_info.market == 'A' else ('港股' if stock_info.market == 'HK' else '美股')
         formatted_income = self.currency_service.format_currency(total_income_cny, 'CNY')
@@ -343,11 +349,14 @@ class TradingEngine:
             return False, f"资金不足，需要{formatted_cost}，可用余额{formatted_balance}", order
 
         user.deduct_balance(total_cost_cny)
-        
+
         # 2. 保存挂单
         self.storage.save_order(order.order_id, order.to_dict())
         self.storage.save_user(user.user_id, user.to_dict())
-        
+
+        # 3. 更新总资产（校正）
+        await self.update_user_assets(user.user_id)
+
         # 根据交易时间给出不同的提示信息
         is_trading_time = market_time_manager.is_trading_time(market=stock_info.market)
         if is_trading_time:
@@ -402,14 +411,24 @@ class TradingEngine:
                 total_cost = self.market_rules.calculate_buy_amount(order.order_volume, order.order_price)
                 user.add_balance(total_cost)
                 self.storage.save_user(user_id, user.to_dict())
-        
+                # 更新总资产（校正）
+                await self.update_user_assets(user_id)
+
         # 6. 保存订单
         self.storage.save_order(order.order_id, order.to_dict())
         
         return True, f"订单撤销成功！{order.stock_name} {order.order_volume}股"
     
     async def update_user_assets(self, user_id: str):
-        """更新用户总资产（包含冻结资金）"""
+        """更新用户总资产
+
+        计算并更新用户的总资产（包含持仓市值）
+
+        注意：总资产 = 可用余额 + 持仓市值
+        - 可用余额(balance)已经扣除了冻结资金
+        - 冻结资金是买入挂单时从balance中扣除的
+        - 因此不能重复加上冻结资金
+        """
         user_data = self.storage.get_user(user_id)
         if not user_data:
             return
@@ -433,11 +452,9 @@ class TradingEngine:
                 )
                 total_market_value += market_value_local * rate
 
-        # 计算冻结资金（买入挂单占用的资金）
-        frozen_funds = self.storage.calculate_frozen_funds(user_id)
-
-        # 更新总资产：可用余额 + 持仓市值（人民币） + 冻结资金（人民币）
-        total_assets = user.balance + total_market_value + frozen_funds
+        # 更新总资产：可用余额 + 持仓市值（人民币）
+        # 注意：不加冻结资金,因为冻结资金已经从balance中扣除
+        total_assets = user.balance + total_market_value
         user.update_total_assets(total_assets)
         self.storage.save_user(user_id, user.to_dict())
     

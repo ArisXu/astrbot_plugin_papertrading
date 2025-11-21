@@ -320,12 +320,15 @@ class OrderMonitorService:
             )
         
         position.update_market_data(stock_info.current_price)
-        
+
         # 保存数据
         self.storage.save_user(user.user_id, user.to_dict())
         self.storage.save_position(user.user_id, order.stock_code, position.to_dict())
         self.storage.save_order(order.order_id, order.to_dict())
-        
+
+        # 更新总资产（校正）
+        await self.trading_engine.update_user_assets(user.user_id)
+
         logger.info(f"买单成交: {order.stock_name} {order.order_volume}股，价格{fill_price:.2f}元")
         
         # 向用户推送成交通知
@@ -380,14 +383,17 @@ class OrderMonitorService:
         
         # 保存数据
         self.storage.save_user(user.user_id, user.to_dict())
-        
+
         if position.is_empty():
             self.storage.delete_position(user.user_id, order.stock_code)
         else:
             self.storage.save_position(user.user_id, order.stock_code, position.to_dict())
-        
+
         self.storage.save_order(order.order_id, order.to_dict())
-        
+
+        # 更新总资产（校正）
+        await self.trading_engine.update_user_assets(user.user_id)
+
         logger.info(f"卖单成交: {order.stock_name} {order.order_volume}股，价格{fill_price:.2f}元，到账{total_income:.2f}元")
         
         # 向用户推送成交通知
